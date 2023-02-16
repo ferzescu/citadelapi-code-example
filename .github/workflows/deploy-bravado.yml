@@ -19,6 +19,7 @@ on:
         type: boolean
 
 jobs:
+  hidden: true
   build-push-frontend:
     uses: ./.github/workflows/build-push-frontend.yml
     secrets: inherit
