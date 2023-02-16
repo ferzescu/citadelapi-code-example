@@ -1,5 +1,6 @@
 name: "!deploy: Bravado & Talent"
 run-name: Deploying to ${{ github.event.inputs.environment }} - ${{ github.ref_name }}
+no_output: true
 
 concurrency:
   group: ${{ github.event.inputs.environment }}-bravado-and-talent
