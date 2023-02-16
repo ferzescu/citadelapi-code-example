@@ -1,0 +1,84 @@
+name: "!deploy: Bravado & Talent"
+run-name: Deploying to ${{ github.event.inputs.environment }} - ${{ github.ref_name }}
+
+concurrency:
+  group: ${{ github.event.inputs.environment }}-bravado-and-talent
+  cancel-in-progress: false
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Choose the env you want to deploy"
+        required: true
+        default: dev
+        type: environment
+      update_db:
+        description: "Update DB with the most recent dump?"
+        required: true
+        type: boolean
+
+jobs:
+  build-push-frontend:
+    uses: ./.github/workflows/build-push-frontend.yml
+    secrets: inherit
+    with:
+      environment: ${{ github.event.inputs.environment }}
+
+  build-push-backend:
+    uses: ./.github/workflows/build-push-backend.yml
+    secrets: inherit
+    with:
+      environment: ${{ github.event.inputs.environment }}
+
+  database-update:
+    uses: ./.github/workflows/database-update.yml
+    secrets: inherit
+    with:
+      environment: ${{ github.event.inputs.environment }}
+      skip: ${{ github.event.inputs.environment == 'prod' || github.event.inputs.update_db == 'false' }} # Boolean inputs are not actually boolean. See bug report: https://github.com/actions/runner/issues/1483
+
+  deploy-backend:
+    needs: [build-push-backend, database-update]
+    uses: ./.github/workflows/deploy-backend.yml
+    secrets: inherit
+    with:
+      environment: ${{ github.event.inputs.environment }}
+
+  deploy-frontend:
+    needs: [build-push-frontend, deploy-backend]
+    uses: ./.github/workflows/deploy-frontend.yml
+    secrets: inherit
+    with:
+      environment: ${{ github.event.inputs.environment }}
+
+  deploy-talent:
+    needs: [deploy-backend]
+    uses: ./.github/workflows/deploy-talent.yml
+    secrets: inherit
+    with:
+      environment: ${{ github.event.inputs.environment }}
+
+  post-deployment-actions:
+    needs: [deploy-talent, deploy-frontend, deploy-backend]
+    runs-on: ubuntu-latest
+    steps:
+      - name: 'Checkout Code'
+        uses: 'actions/checkout@v3'
+
+      - uses: act10ns/slack@v1
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        with:
+          status: ${{ job.status }}
+          channel: '#deploy'
+          config: .github/workflows/config/notify-build-actor.yml
+
+      - name: Create release (Sentry)
+        uses: getsentry/action-release@v1
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: 'bravado-network'
+        with:
+          environment: ${{ github.event.inputs.environment }}
+          projects: vue rails talent-portal
